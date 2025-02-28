@@ -1524,3 +1524,42 @@ fn test_valid_indices_after_set_path2() {
     url.set_path("//d");
     assert_eq!(url.as_str(), "moz:/.//d");
 }
+
+
+#[test]
+fn test_has_host_username() {
+    // Testing everything
+    let mut url = Url::parse("moz:/a:b@").unwrap();
+    assert_eq!(url.as_str(), "moz:/a:b@");
+    assert_eq!(url.path(), "/a:b@");
+    assert!(!url.cannot_be_a_base());
+
+    url.set_path("//p@");
+    assert_eq!(url.as_str(), "moz:/.//p@");
+    url.set_path("//d");
+    assert_eq!(url.as_str(), "moz:/.//d");
+    url.set_host(Some("host"));
+    assert_eq!(url.as_str(), "moz://host//d");
+    url.set_host(Some(""));
+    assert_eq!(url.as_str(), "moz:////d");
+}
+
+#[test]
+fn test_set_host_to_none() {
+    // Testing everything
+    let mut url = Url::parse("moz:/a:b@").unwrap();
+    assert_eq!(url.as_str(), "moz:/a:b@");
+    assert_eq!(url.path(), "/a:b@");
+    assert!(!url.cannot_be_a_base());
+
+    url.set_path("//p@");
+    assert_eq!(url.as_str(), "moz:/.//p@");
+    url.set_path("//d");
+    assert_eq!(url.as_str(), "moz:/.//d");
+    url.set_host(Some("host"));
+    assert_eq!(url.as_str(), "moz://host//d");
+    url.set_host(None);
+    // This is probably not correct.
+    // This URL doesn't round-trip. We probably need to fix set host too, so if path starts with // after setting to None, we add ./
+    assert_eq!(url.as_str(), "moz://d");
+}
