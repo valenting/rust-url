@@ -1577,3 +1577,55 @@ fn test_path_empty() {
     // TODO
     assert_eq!(url.as_str(), "moz:/");
 }
+
+
+#[test]
+fn test_path_segment_mut_empty() {
+    // Testing everything
+    let mut url = Url::parse("moz:/").unwrap();
+    assert_eq!(url.as_str(), "moz:/");
+    url.set_path("//d");
+    assert_eq!(url.as_str(), "moz:/.//d");
+
+    {
+        // equivalent to url.set_path("");
+        url.path_segments_mut().unwrap().clear();
+    }
+
+    assert_eq!(url.as_str(), "moz:/");
+
+    {
+        let mut segments = url.path_segments_mut().unwrap();
+        segments.clear();
+        segments.extend(&["","d"]);
+    }
+    assert_eq!(url.as_str(), "moz:/.//d");
+}
+
+
+#[test]
+fn test_path_segment_mut_extend() {
+    // Testing everything
+    let mut url = Url::parse("moz:/").unwrap();
+    assert_eq!(url.as_str(), "moz:/");
+
+    {
+        let mut segments = url.path_segments_mut().unwrap();
+        segments.extend(&["","d"]);
+    }
+    assert_eq!(url.as_str(), "moz:/.//d");
+}
+
+
+#[test]
+fn test_path_segment_mut_extend_again() {
+    // Testing everything
+    let mut url = Url::parse("moz://host/").unwrap();
+    assert_eq!(url.as_str(), "moz://host/");
+
+    {
+        let mut segments = url.path_segments_mut().unwrap();
+        segments.extend(&["","d"]);
+    }
+    assert_eq!(url.as_str(), "moz://host//d");
+}
