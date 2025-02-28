@@ -1811,16 +1811,6 @@ impl Url {
             }
         });
 
-        let empty_first_segment: bool = {
-            let segments = self.path_segments();
-            if segments.is_none() {
-                false
-            } else {
-                let  mut s = segments.unwrap();
-                s.next() == Some("") && s.next() != None
-            }
-        };
-
         // For cases where normalization is applied across both the serialization and the path.
         // Append "/." immediately after the scheme (up to ":")
         // This is done if three conditions are met.
@@ -1828,15 +1818,10 @@ impl Url {
         // 1. The host is null
         // 2. The url's path length is greater than 1
         // 3. the first segment of the URL's path is an empty string
-        if !has_host && empty_first_segment {
+        if !has_host && self.path().starts_with("//") {
             if let Some(index) = self.serialization.find(":") {
-                if self.serialization.len() > index + 2
-                    && self.serialization.as_bytes().get(index + 1) == Some(&b'/')
-                    && self.serialization.as_bytes().get(index + 2) == Some(&b'/')
-                {
-                    self.serialization.insert_str(index + ":".len(), "/.");
-                    self.path_start += "/.".len() as u32;
-                }
+                self.serialization.insert_str(index + ":".len(), "/.");
+                self.path_start += "/.".len() as u32;
             }
         }
 
