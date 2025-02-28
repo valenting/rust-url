@@ -1784,7 +1784,7 @@ impl Url {
         // https://url.spec.whatwg.org/#url-serializing
         // 1. The host is null
         // 2. the first segment of the URL's path is an empty string
-        if !path_empty && self.path().len() + path.len() > 1 {
+        if !path_empty {
             if let Some(index) = self.serialization.find(":") {
                 let removal_start = index + ":".len();
                 if self.serialization[removal_start..].starts_with("/.") {
@@ -1823,6 +1823,13 @@ impl Url {
                 self.serialization.insert_str(index + ":".len(), "/.");
                 self.path_start += "/.".len() as u32;
             }
+        }
+
+        // Restore / if it was cannot be a base.
+        // TODO: is this the optimal place?
+        if !cannot_be_a_base && self.path().is_empty() {
+            self.serialization.push('/');
+            self.path_start = self.serialization.len() as u32;
         }
 
         self.restore_after_path(old_after_path_pos, &after_path, qstart, fstart);

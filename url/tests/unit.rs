@@ -1563,3 +1563,17 @@ fn test_set_host_to_none() {
     // This URL doesn't round-trip. We probably need to fix set host too, so if path starts with // after setting to None, we add ./
     assert_eq!(url.as_str(), "moz://d");
 }
+
+
+
+#[test]
+fn test_path_empty() {
+    // Testing everything
+    let mut url = Url::parse("moz:/").unwrap();
+    assert_eq!(url.as_str(), "moz:/");
+    url.set_path("//d");
+    assert_eq!(url.as_str(), "moz:/.//d");
+    url.set_path("");
+    // TODO
+    assert_eq!(url.as_str(), "moz:/");
+}
