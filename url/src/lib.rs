@@ -1705,14 +1705,18 @@ impl Url {
         form_urlencoded::Serializer::for_suffix(query, query_start + "?".len())
     }
 
-    fn take_after_path(&mut self) -> String {
+    fn take_after_path(&mut self) -> (String, Option<u32>, Option<u32>) {
         match (self.query_start, self.fragment_start) {
             (Some(i), _) | (None, Some(i)) => {
                 let after_path = self.slice(i..).to_owned();
                 self.serialization.truncate(i as usize);
-                after_path
+                let qstart = self.query_start;
+                let fstart = self.fragment_start;
+                self.query_start = None;
+                self.fragment_start = None;
+                (after_path, qstart, fstart)
             }
-            (None, None) => String::new(),
+            (None, None) => (String::new(), None, None)
         }
     }
 
@@ -1752,7 +1756,7 @@ impl Url {
     /// # run().unwrap();
     /// ```
     pub fn set_path(&mut self, mut path: &str) {
-        let after_path = self.take_after_path();
+        let (after_path, qstart, fstart) = self.take_after_path();
         let old_after_path_pos = to_u32(self.serialization.len()).unwrap();
         let cannot_be_a_base = self.cannot_be_a_base();
         let scheme_type = SchemeType::from(self.scheme());
@@ -1780,11 +1784,12 @@ impl Url {
         // https://url.spec.whatwg.org/#url-serializing
         // 1. The host is null
         // 2. the first segment of the URL's path is an empty string
-        if self.path().len() + path.len() > 1 {
+        if !path_empty && self.path().len() + path.len() > 1 {
             if let Some(index) = self.serialization.find(":") {
                 let removal_start = index + ":".len();
                 if self.serialization[removal_start..].starts_with("/.") {
                     self.path_start = removal_start as u32;
+                    has_host = false;
                 }
             }
         }
@@ -1806,6 +1811,16 @@ impl Url {
             }
         });
 
+        let empty_first_segment: bool = {
+            let segments = self.path_segments();
+            if segments.is_none() {
+                false
+            } else {
+                let  mut s = segments.unwrap();
+                s.next() == Some("") && s.next() != None
+            }
+        };
+
         // For cases where normalization is applied across both the serialization and the path.
         // Append "/." immediately after the scheme (up to ":")
         // This is done if three conditions are met.
@@ -1813,7 +1828,7 @@ impl Url {
         // 1. The host is null
         // 2. The url's path length is greater than 1
         // 3. the first segment of the URL's path is an empty string
-        if !has_host && path.len() > 1 && path_empty {
+        if !has_host && empty_first_segment {
             if let Some(index) = self.serialization.find(":") {
                 if self.serialization.len() > index + 2
                     && self.serialization.as_bytes().get(index + 1) == Some(&b'/')
@@ -1825,7 +1840,7 @@ impl Url {
             }
         }
 
-        self.restore_after_path(old_after_path_pos, &after_path);
+        self.restore_after_path(old_after_path_pos, &after_path, qstart, fstart);
     }
 
     /// Return an object with methods to manipulate this URL’s path segments.
@@ -1840,15 +1855,17 @@ impl Url {
         }
     }
 
-    fn restore_after_path(&mut self, old_after_path_position: u32, after_path: &str) {
+    fn restore_after_path(&mut self, old_after_path_position: u32, after_path: &str, qstart: Option<u32>, fstart: Option<u32>) {
         let new_after_path_position = to_u32(self.serialization.len()).unwrap();
         let adjust = |index: &mut u32| {
             *index -= old_after_path_position;
             *index += new_after_path_position;
         };
+        self.query_start = qstart;
         if let Some(ref mut index) = self.query_start {
             adjust(index)
         }
+        self.fragment_start = fstart;
         if let Some(ref mut index) = self.fragment_start {
             adjust(index)
         }

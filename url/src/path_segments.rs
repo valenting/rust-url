@@ -44,11 +44,13 @@ pub struct PathSegmentsMut<'a> {
     after_first_slash: usize,
     after_path: String,
     old_after_path_position: u32,
+    qstart: Option<u32>,
+    fstart: Option<u32>,
 }
 
 // Not re-exported outside the crate
 pub fn new(url: &mut Url) -> PathSegmentsMut<'_> {
-    let after_path = url.take_after_path();
+    let (after_path, qstart, fstart) = url.take_after_path();
     let old_after_path_position = to_u32(url.serialization.len()).unwrap();
     // Special urls always have a non empty path
     if SchemeType::from(url.scheme()).is_special() {
@@ -64,13 +66,15 @@ pub fn new(url: &mut Url) -> PathSegmentsMut<'_> {
         url,
         old_after_path_position,
         after_path,
+        qstart,
+        fstart,
     }
 }
 
 impl Drop for PathSegmentsMut<'_> {
     fn drop(&mut self) {
         self.url
-            .restore_after_path(self.old_after_path_position, &self.after_path)
+            .restore_after_path(self.old_after_path_position, &self.after_path, self.qstart, self.fstart)
     }
 }
 

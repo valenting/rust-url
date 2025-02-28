@@ -1511,3 +1511,16 @@ fn test_valid_indices_after_set_path() {
     assert_eq!(url.fragment(), Some("frag"));
     url.check_invariants().unwrap();
 }
+
+#[test]
+fn test_valid_indices_after_set_path2() {
+    // Testing everything
+    let mut url = Url::parse("moz:/").unwrap();
+    assert_eq!(url.as_str(), "moz:/");
+    assert!(!url.cannot_be_a_base());
+
+    url.set_path("//p");
+    assert_eq!(url.as_str(), "moz:/.//p");
+    url.set_path("//d");
+    assert_eq!(url.as_str(), "moz:/.//d");
+}
