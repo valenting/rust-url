@@ -1771,7 +1771,25 @@ impl Url {
         let scheme_type = SchemeType::from(self.scheme());
         // Determine if this URL has a host before we start mutating
         let mut has_host = self.host().is_some();
-        self.serialization.truncate(self.path_start as usize);
+
+        // Check if the URL currently has "/." normalization (for URLs without host where path started with "//")
+        // If it does and the new path doesn't need it, we should remove it
+        let has_normalization = !has_host && self.path_start > 0 && {
+            let scheme_end = self.serialization[..self.path_start as usize].rfind(':').unwrap_or(0);
+            self.serialization[scheme_end..self.path_start as usize].ends_with(":/.")
+        };
+
+        // If we have "/." normalization, we need to remove it first
+        // because we'll re-add it later if the new path needs it
+        let mut adjusted_path_start = self.path_start;
+        if has_normalization {
+            // Always remove the existing "/." - we'll add it back later if needed
+            adjusted_path_start -= 2;
+        }
+
+        self.serialization.truncate(adjusted_path_start as usize);
+        self.path_start = adjusted_path_start;
+
         self.mutate(|parser| {
             if cannot_be_a_base {
                 if path.starts_with('/') {
@@ -2116,9 +2134,22 @@ impl Url {
         } else {
             self.host_end
         };
-        let suffix = self.slice(old_suffix_pos..).to_owned();
+        let mut suffix = self.slice(old_suffix_pos..).to_owned();
+
+        // If we're adding a host to a URL that previously had no host,
+        // check if the path has "/." normalization and remove it since it's no longer needed
+        let adding_host = !self.has_authority();
+        let mut removed_normalization = 0;
+        if adding_host {
+            if suffix.starts_with("/.") {
+                // Remove the "/." prefix from the path
+                suffix = suffix[2..].to_owned();
+                removed_normalization = 2;
+            }
+        }
+
         self.serialization.truncate(self.host_start as usize);
-        if !self.has_authority() {
+        if adding_host {
             debug_assert!(self.slice(self.scheme_end..self.host_start) == ":");
             debug_assert!(self.username_end == self.host_start);
             self.serialization.push('/');
@@ -2140,8 +2171,9 @@ impl Url {
         self.serialization.push_str(&suffix);
 
         let adjust = |index: &mut u32| {
-            *index -= old_suffix_pos;
-            *index += new_suffix_pos;
+            let old_offset = *index as i64 - old_suffix_pos as i64;
+            let new_offset = (old_offset - removed_normalization as i64).max(0) as u32;
+            *index = new_suffix_pos + new_offset;
         };
         adjust(&mut self.path_start);
         if let Some(ref mut index) = self.query_start {
