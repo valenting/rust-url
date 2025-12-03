@@ -69,6 +69,31 @@ pub fn new(url: &mut Url) -> PathSegmentsMut<'_> {
 
 impl Drop for PathSegmentsMut<'_> {
     fn drop(&mut self) {
+        // Apply "/." normalization if needed: when there's no host and the path starts with "//"
+        // This prevents the path from being interpreted as an authority section.
+        // See https://url.spec.whatwg.org/#url-serializing
+        if self.url.host().is_none() && self.url.path().starts_with("//") {
+            // Find the position after the scheme (the ':')
+            if let Some(colon_pos) = self.url.serialization[..self.url.path_start as usize].rfind(':') {
+                let insert_pos = colon_pos + 1;
+                // Insert "/." right after the colon
+                self.url.serialization.insert_str(insert_pos, "/.");
+                self.url.path_start += 2; // Adjust path_start by the length of "/."
+
+                // Adjust query_start and fragment_start if they come after the insertion point
+                if let Some(ref mut qstart) = self.url.query_start {
+                    if (*qstart as usize) >= insert_pos {
+                        *qstart += 2;
+                    }
+                }
+                if let Some(ref mut fstart) = self.url.fragment_start {
+                    if (*fstart as usize) >= insert_pos {
+                        *fstart += 2;
+                    }
+                }
+            }
+        }
+
         self.url
             .restore_after_path(self.old_after_path_position, &self.after_path)
     }
@@ -240,26 +265,58 @@ impl PathSegmentsMut<'_> {
     {
         let scheme_type = SchemeType::from(self.url.scheme());
         let path_start = self.url.path_start as usize;
+        // Determine if the URL has a host
+        let mut has_host = self.url.host().is_some();
+
         self.url.mutate(|parser| {
             parser.context = parser::Context::PathSegmentSetter;
+            let mut first_segment = true;
+            let mut prev_was_empty = false;
             for segment in segments {
                 let segment = segment.as_ref();
                 if matches!(segment, "." | "..") {
                     continue;
                 }
-                if parser.serialization.len() > path_start + 1
-                    // Non special url's path might still be empty
-                    || parser.serialization.len() == path_start
-                {
+
+                // Add a '/' separator before each segment.
+                // Rules:
+                // 1. If path is empty (no slash yet), always add one
+                // 2. If this is the first segment in this extend() call:
+                //    a. At initial slash + non-empty segment: don't add slash (documented behavior)
+                //    b. At initial slash + empty segment: add slash (to create "//")
+                //    c. Beyond initial slash: add slash
+                // 3. If not the first segment AND previous wasn't empty: add slash
+                //    (if previous was empty, its slash serves as separator)
+                let path_empty = parser.serialization.len() == path_start;
+                let at_initial_slash_only = parser.serialization.len() == path_start + 1;
+                let beyond_initial = parser.serialization.len() > path_start + 1;
+
+                let need_slash = if first_segment {
+                    // First segment in this extend() call
+                    path_empty || beyond_initial || (at_initial_slash_only && segment.is_empty())
+                } else {
+                    // Subsequent segment: need slash only if previous wasn't empty
+                    // (empty segment's slash serves as separator for next)
+                    !prev_was_empty
+                };
+
+                if need_slash {
                     parser.serialization.push('/');
                 }
-                let mut has_host = true; // FIXME account for this?
-                parser.parse_path(
-                    scheme_type,
-                    &mut has_host,
-                    path_start,
-                    parser::Input::new_no_trim(segment),
-                );
+
+                // For empty segments, just the slash separator (already added) represents them.
+                // Don't call parse_path which might normalize them away.
+                if !segment.is_empty() {
+                    parser.parse_path(
+                        scheme_type,
+                        &mut has_host,
+                        path_start,
+                        parser::Input::new_no_trim(segment),
+                    );
+                }
+
+                first_segment = false;
+                prev_was_empty = segment.is_empty();
             }
         });
         self

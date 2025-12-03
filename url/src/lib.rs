@@ -1769,6 +1769,8 @@ impl Url {
         let old_after_path_pos = to_u32(self.serialization.len()).unwrap();
         let cannot_be_a_base = self.cannot_be_a_base();
         let scheme_type = SchemeType::from(self.scheme());
+        // Determine if this URL has a host before we start mutating
+        let mut has_host = self.host().is_some();
         self.serialization.truncate(self.path_start as usize);
         self.mutate(|parser| {
             if cannot_be_a_base {
@@ -1778,7 +1780,6 @@ impl Url {
                 }
                 parser.parse_cannot_be_a_base_path(parser::Input::new_no_trim(path));
             } else {
-                let mut has_host = true; // FIXME
                 parser.parse_path_start(
                     scheme_type,
                     &mut has_host,
@@ -1786,6 +1787,32 @@ impl Url {
                 );
             }
         });
+        // After setting the path, check if we need to add "/." normalization
+        // This is required when there's no host and the path starts with "//"
+        // to prevent the path from being interpreted as an authority section.
+        // See https://url.spec.whatwg.org/#url-serializing
+        if !has_host && self.path().starts_with("//") {
+            // Find the position after the scheme (the ':')
+            if let Some(colon_pos) = self.serialization[..self.path_start as usize].rfind(':') {
+                let insert_pos = colon_pos + 1;
+                // Insert "/." right after the colon
+                self.serialization.insert_str(insert_pos, "/.");
+                self.path_start += 2; // Adjust path_start by the length of "/."
+
+                // Adjust query_start and fragment_start if they come after the insertion point
+                // (they do if there was a query/fragment that was temporarily removed)
+                if let Some(ref mut qstart) = self.query_start {
+                    if (*qstart as usize) >= insert_pos {
+                        *qstart += 2;
+                    }
+                }
+                if let Some(ref mut fstart) = self.fragment_start {
+                    if (*fstart as usize) >= insert_pos {
+                        *fstart += 2;
+                    }
+                }
+            }
+        }
         self.restore_after_path(old_after_path_pos, &after_path);
     }
 
